@@ -39,7 +39,7 @@
         "modelo" => "",
         "numPoliza" => "",
         "rangoAsignado" => [
-            "fchFin" => "2025-01-28",
+            "fchFin" => date("Y-m-d"),
             "fchInicio" => "2024-10-01"
         ],
         "rangoCreacion" => [
@@ -80,6 +80,7 @@
             } else {
                 $filteredRrReports = array_filter($data["content"], "rrFilter");
                 $values = [];
+                $vins = [];
                 foreach ($filteredRrReports as $key => $report) {
                     if (!in_array($report["uuidTramite"], $uuidPolicies)) {
                         $uuid = $report["uuidTramite"];
@@ -87,25 +88,81 @@
                         $status_robo = $report["estatusRobo"]["clave"] . "-" . $report["estatusRobo"]["descripcion"];
                         $vin = $report["vin"];
                         $placas = $report["placas"];
-                        $values[] = [$uuid, $status_tramite, $status_robo, $vin, $placas];
+                        if (isset($report["vin"]) && $report["vin"] !== "") {
+                            $vins[] = $report["vin"];
+                        }
+                        $values[] = [$uuid, $status_tramite, $status_robo, $vin, $placas, ""];
                     }
                 }
-                $sql = "INSERT INTO policies (uuid, status_tramite, status_robo, vin, placas) VALUES (?, ?, ?, ?, ?)";
+                /* $values[] = ["testvin", "testvin", "testvin", "3AKJHPDV1RSVK0034", "testvin", ""];
+                $vins[] = "3AKJHPDV1RSVK0034"; */
+                $vinsBody = ["vin" => $vins];
+                $jsonVinsData = json_encode($vinsBody);
+                $ci = curl_init();
+                curl_setopt($ci, CURLOPT_URL, "https://secure.tecnomotum.com/apis/gnp/vinlocator");
+                curl_setopt($ci, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ci, CURLOPT_HEADER, false);
+                curl_setopt($ci, CURLOPT_POST, true);
+                curl_setopt($ci, CURLOPT_POSTFIELDS, $jsonVinsData);
+                curl_setopt($ci, CURLOPT_HTTPHEADER, [
+                    "accept: application/json;charset=UTF-8",
+                    "Content-Type: application/json;charset=UTF-8"
+                ]);
+                $jsonVins = curl_exec($ci);
+                $dataArray = json_decode($jsonVins, true);
+                foreach ($values as $keyRr => $item) {
+                    if (array_key_exists($item[3], $dataArray)) {
+                        if ($dataArray[$item[3]]["located"]) {
+                            $values[$keyRr][6] = 1;
+                        } else {
+                            $values[$keyRr][6] = 0;
+                        }
+                    }
+                }
+                $sql = "INSERT INTO policies (uuid, status_tramite, status_robo, vin, placas, motum_status, motum_vin) VALUES (?, ?, ?, ?, ?, ?, ?)";
                 $stmt = $conn->prepare($sql);
                 if ($stmt === false) {
                     die("Error en la preparación: " . $conn->error);
                 }
                 foreach ($values as $row) {
-                    $stmt->bind_param("sssss", $row[0], $row[1], $row[2], $row[3], $row[4]);
+                    $stmt->bind_param("ssssssi", $row[0], $row[1], $row[2], $row[3], $row[4], $row[5], $row[6]);
                     $stmt->execute();
                 }
                 echo "Datos insertados correctamente";
                 $stmt->close();
                 $conn->close();
+                $withVin = [];
+                foreach ($values as $current) {
+                    if ($current[6] === 1) {
+                        $withVin[] = $current[3];
+                    }
+                }
+                if (count($withVin) > 0) {
+                    $joinedVins = implode(", ", $withVin);
+                    $waMessage = "Las unidades con VIN: " . $joinedVins . " tienen poliza de robo activa.";
+                    $waBody = [
+                        "message" => $waMessage,
+                        "number" => "", // ADD NUMBER
+                        "type" => "person"
+                    ];
+                    $cj = curl_init();
+                    curl_setopt($cj, CURLOPT_URL, "https://secure.tecnomotum.com/apis/wsp/send");
+                    curl_setopt($cj, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($cj, CURLOPT_HEADER, false);
+                    curl_setopt($cj, CURLOPT_POST, true);
+                    curl_setopt($cj, CURLOPT_POSTFIELDS, json_encode($waBody));
+                    curl_setopt($cj, CURLOPT_HTTPHEADER, [
+                        "accept: application/json;charset=UTF-8",
+                        "Content-Type: application/json;charset=UTF-8"
+                    ]);
+                    curl_exec($cj);
+                    curl_close($cj);
+                }
             }
         } else {
             echo "HTTP request error, status code: " . $http_code;
         }
     }
     curl_close($ch);
+    curl_close($ci);
 ?>
