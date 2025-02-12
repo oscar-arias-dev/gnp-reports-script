@@ -91,10 +91,12 @@
                         if (isset($report["vin"]) && $report["vin"] !== "") {
                             $vins[] = $report["vin"];
                         }
-                        $values[] = [$uuid, $status_tramite, $status_robo, $vin, $placas, ""];
+                        $codigo_siniestro = $report["codSiniestro"] ?? "";
+                        $fecha_siniestro = $report["fchSiniestro"] ?? "";
+                        $values[] = [$uuid, $status_tramite, $status_robo, $vin, $placas, "", "", $codigo_siniestro, $fecha_siniestro];
                     }
                 }
-                /* $values[] = ["testvin", "testvin", "testvin", "3AKJHPDV1RSVK0034", "testvin", ""];
+                /* $values[] = ["testvin", "testvin", "testvin", "3AKJHPDV1RSVK0034", "testvin", "", "", "123456789", "2024-11-05 23:26:00"];
                 $vins[] = "3AKJHPDV1RSVK0034"; */
                 $vinsBody = ["vin" => $vins];
                 $jsonVinsData = json_encode($vinsBody);
@@ -119,13 +121,13 @@
                         }
                     }
                 }
-                $sql = "INSERT INTO policies (uuid, status_tramite, status_robo, vin, placas, motum_status, motum_vin) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                $sql = "INSERT INTO policies (uuid, status_tramite, status_robo, vin, placas, motum_status, motum_vin, codigo_siniestro, fecha_siniestro) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt = $conn->prepare($sql);
                 if ($stmt === false) {
                     die("Error en la preparación: " . $conn->error);
                 }
                 foreach ($values as $row) {
-                    $stmt->bind_param("ssssssi", $row[0], $row[1], $row[2], $row[3], $row[4], $row[5], $row[6]);
+                    $stmt->bind_param("ssssssiss", $row[0], $row[1], $row[2], $row[3], $row[4], $row[5], $row[6], $row[7], $row[8]);
                     $stmt->execute();
                 }
                 echo "Datos insertados correctamente";
